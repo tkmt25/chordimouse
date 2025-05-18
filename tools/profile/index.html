@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ChordiMouse プロファイルエディタ</title>
+  <script type="module" src="./js/chordimouse.js"></script>
+  <link rel="stylesheet" type="text/css" href="./css/style.css">
+</head>
+<body x-data="chordiUI" x-init="init">
+  <h1>
+    ChordiMouse プロファイルエディタ
+    <span>
+      <button @click="connect" class="icon-button" title="接続" x-show="!isConnected">🔌</button>
+      <span class="status-indicator connected" title="接続済み" x-show="isConnected"></span>
+      <button @click="save" class="icon-button" title="保存" x-show="isConnected">💾</button>
+    </span>
+  </h1>
+
+  <div class="overlay" x-show="loading">
+    <div class="spinner"></div>
+  </div>
+
+  <div class="tabs">
+    <button :class="{ active: currentTab === 'global' }" @click="currentTab = 'global'">グローバル設定</button>
+    <button :class="{ active: currentTab === 'keyprofiles' }" @click="currentTab = 'keyprofiles'">キー設定</button>
+  </div>
+
+  <div x-show="currentTab === 'global'">
+    <table>
+      <thead><tr><th>設定項目</th><th>値</th></tr></thead>
+      <tbody>
+        <tr><td>同時押しの検出時間(ms)</td><td><input type="number" min="10" x-model="config.current.chord_timeout" :class="{ changed: isChanged(config, 'chord_timeout') }"></td></tr>
+        <tr><td>X軸の不感帯</td><td><input type="number" min="0" max="50" x-model="config.current.joy_x_deadband" :class="{ changed: isChanged(config, 'joy_x_deadband') }"></td></tr>
+        <tr><td>Y軸の不感帯</td><td><input type="number" min="0" max="50" x-model="config.current.joy_y_deadband" :class="{ changed: isChanged(config, 'joy_y_deadband') }"></td></tr>
+        <tr><td>マウスの負の慣性</td><td><input type="number" min="0" step="1" x-model="config.current.mouse_negative_gain" :class="{ changed: isChanged(config, 'mouse_negative_gain') }"></td></tr>
+        <tr><td>マウス感度</td><td><input type="number" min="0.1" step="0.01"  x-model="config.current.mickey_scale" :class="{ changed: isChanged(config, 'mickey_scale') }"></td></tr>
+        <tr><td>マウスレポート間隔(ms)</td><td><input type="number" min="1" step="1"  x-model="config.current.repo_ms" :class="{ changed: isChanged(config, 'repo_ms') }"></td></tr>
+        <tr><td>スリープまでの時間(ms)</td><td><input type="number" x-model="config.current.lightsleep_timeout" :class="{ changed: isChanged(config, 'lightsleep_timeout') }"></td></tr>
+        <tr><td>ディープスリープまでの時間(ms)</td><td><input type="number" x-model="config.current.deepsleep_timeout" :class="{ changed: isChanged(config, 'deepsleep_timeout') }"></td></tr>
+        <tr><td>BLE送信電力(dbm)</td><td><input type="number" min="-8" max="+8" step="1" x-model="config.current.tx_power" :class="{ changed: isChanged(config, 'tx_power') }"></td></tr>
+        <tr><td>BLE接続間隔(1.25ms単位)</td><td><input type="number" min="6" step="1" x-model="config.current.conn_interval_min" :class="{ changed: isChanged(config, 'conn_interval_min') }"> ～ <input type="number" min="6" step="1" x-model="config.current.conn_interval_max" :class="{ changed: isChanged(config, 'conn_interval_max') }"></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div x-show="currentTab === 'keyprofiles'">
+    <table>
+      <thead><tr><th>ボタン入力</th><th>キーコード</th></tr></thead>
+      <tbody>
+        <template x-for="(scancode, chord) in keyProfiles.current[0].chordMap" :key="chord">
+          <tr>
+            <td x-text="formatChord(parseInt(chord))"></td>
+            <td>
+              <input type="text" 
+                    :value="formatScancode(parseInt(scancode))"
+                    @input="updateScancode(0, chord, $event.target.value)"
+                    :class="{ changed: isChanged(keyProfiles, 0, 'chordMap', chord) }">
+            </td>
+          </tr>
+        </template>
+        <tr class="separator"><td>Fnキー同時押し</td><td></td></tr>
+        <template x-for="(scancode, chord) in keyProfiles.current[1].chordMap" :key="chord">
+          <tr>
+            <td x-text="formatChord(parseInt(chord))"></td>
+            <td>
+              <input type="text" 
+                    :value="formatScancode(parseInt(scancode))"
+                    @input="updateScancode(1, chord, $event.target.value)"
+                    :class="{ changed: isChanged(keyProfiles, 1, 'chordMap', chord) }">
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+
+  <script type="module">
+    import Alpine from 'https://cdn.skypack.dev/alpinejs@3.10.5'
+    import { ChordiMouse,Button,HID_KEYCODES } from './js/chordimouse.js';
+
+    window.formatChord = (chord) => {
+      return Object.entries(Button)
+          .filter(([_, val]) => chord & val)
+          .map(([name]) => name.replace(/_/g, ' '))
+          .join(' + ');
+    };
+    window.formatScancode = (scancode) => {
+      return HID_KEYCODES[scancode];
+    };    
+
+    const chordiUI = () => ({
+      currentTab: 'global',
+      loading: false,
+      isConnected: false,
+      chordimouse: null,
+      config: {
+        original: {},
+        current: {
+          chord_timeout: 0,
+          joy_x_deadband: 0,
+          joy_y_deadband: 0,
+          lightsleep_timeout: 0,
+          deepsleep_timeout: 0,
+          mickey_scale: 0.0,
+          mouse_negative_gain: 0,
+          conn_interval_min: 0,
+          conn_interval_max: 0,
+          tx_power: 0,
+          repo_ms: 0,
+        }
+      },
+      keyProfiles: {
+        original: [],
+        current: []
+      },
+
+      async init() {
+        this.chordimouse = new ChordiMouse();
+        this.chordimouse.addEventListener('connected', () => {
+          this.isConnected = true;
+        });
+        this.chordimouse.addEventListener('disconnected', () => {
+          this.isConnected = false;
+        });
+      },
+
+      isChanged(obj, ...keys) {
+        let curr = obj.current;
+        let orig = obj.original;
+        for (let k of keys) {
+          curr = curr?.[k];
+          orig = orig?.[k];
+        }
+        return Number(curr) !== Number(orig);
+      },
+
+      async save() {
+        await this.saveConfig();
+        await this.saveKeyProfiles();
+        //console.log(this.keyProfiles.current[0]);
+      },
+
+      async saveConfig() {
+
+        try {
+          this.loading = true;
+          await this.chordimouse.saveGlobalConfig(this.config.current);
+          await this.loadGlobal();
+        }
+        finally {
+          this.loading = false;
+        }
+      },
+
+      async saveKeyProfiles() {
+
+        try {
+          this.loading = true;
+          console.log(this.keyProfiles.current);
+          await this.chordimouse.saveKeyProfiles(this.keyProfiles.current);
+          await this.loadKeyProfiles();
+        }
+        finally {
+          this.loading = false;
+        }
+      },
+
+      updateScancode(profileIndex, chord, keyName) {
+        const codeEntry = Object.entries(HID_KEYCODES).find(([code, name]) => name === keyName.toUpperCase());
+        if (!codeEntry) return; // 無効なキー名なら無視
+        const [scancode] = codeEntry;
+        this.keyProfiles.current[profileIndex].chordMap[chord] = Number(scancode);
+      },
+
+      async loadGlobal() {
+        this.config.original = await this.chordimouse.loadGlobalConfig();
+        this.config.current = JSON.parse(JSON.stringify(this.config.original));
+      },
+
+      async loadKeyProfiles() {
+        this.keyProfiles.current = await this.chordimouse.loadKeyProfiles();
+        this.keyProfiles.original = JSON.parse(JSON.stringify(this.keyProfiles.current));
+      },
+
+      async connect() {
+        try {
+          // 接続
+          this.loading = true;
+          await this.chordimouse.connect();
+          
+          // globalConfig
+          await this.loadGlobal();
+
+          // keyProfile
+          await this.loadKeyProfiles();
+        } 
+        finally{
+          this.loading = false;
+        }
+      }
+    });
+
+    document.addEventListener('alpine:init', () => {
+      console.log("on init");
+      Alpine.data('chordiUI', chordiUI);
+    });
+
+    Alpine.start();
+  </script>
+</body>
+</html>

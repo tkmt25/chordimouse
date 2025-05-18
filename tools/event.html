@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>マウス・キーボードイベントビューア</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background-color: #f0f0f0;
+      padding: 2em;
+    }
+    #log {
+      background-color: white;
+      border: 1px solid #ccc;
+      padding: 1em;
+      height: 300px;
+      overflow-y: scroll;
+      white-space: pre-wrap;
+      font-size: 1.1em;
+    }
+  </style>
+</head>
+<body>
+  <h1>イベントビューア</h1>
+  <p>マウスクリックやキー入力をここでチェックできるよ！</p>
+  <div id="log"></div>
+
+  <script>
+    const log = document.getElementById('log');
+
+    function appendLog(message) {
+      const time = new Date().toLocaleTimeString();
+      log.textContent += `[${time}] ${message}\n`;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    document.addEventListener('mousedown', e => {
+      appendLog(`MOUSE PRESS (${e.button}) at (${e.clientX}, ${e.clientY})`);
+    });
+
+    document.addEventListener('mouseup', e => {
+      appendLog(`MOUSE RELEASE (${e.button}) at (${e.clientX}, ${e.clientY})`);
+    });
+
+    document.addEventListener('keydown', e => {
+      appendLog(`KEY PRESS [${e.key}]`);
+    });
+
+    document.addEventListener('keyup', e => {
+      appendLog(`KEY RELEASE [${e.key}]`);
+    });
+  </script>
+</body>
+</html>
